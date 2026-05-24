@@ -1,0 +1,124 @@
+name: Build and Release Xenon Maps
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Sürüm numarası (örn: v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Kaynak kodları al
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Node.js kurulumu
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: 📦 HTML, CSS ve JS dosyalarını birleştir
+        run: |
+          mkdir -p dist
+          
+          # CSS ve JS içeriklerini oku
+          CSS_CONTENT=$(cat src/css/style.css)
+          JS_CONTENT=$(cat src/js/app.js)
+          
+          # HTML dosyasını al ve CSS/JS'yi göm
+          cat src/index.html | \
+            sed "s|<link rel=\"stylesheet\" href=\"css/style.css\">|<style>\n${CSS_CONTENT}\n</style>|" | \
+            sed "s|<script src=\"js/app.js\"></script>|<script>\n${JS_CONTENT}\n</script>|" \
+            > dist/xenon-maps.html
+          
+          echo "✅ Birleştirme tamamlandı: dist/xenon-maps.html"
+          
+      - name: 📋 Dosya boyutunu kontrol et
+        run: |
+          echo "📊 Dosya boyutu:"
+          ls -lh dist/xenon-maps.html | awk '{print $5}'
+          
+      - name: 🏷️ Versiyon numarasını belirle
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION=${{ github.event.inputs.version }}
+          else
+            VERSION="latest"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "🎯 Versiyon: $VERSION"
+          
+      - name: 📦 ZIP arşivi oluştur
+        run: |
+          cd dist
+          zip -r ../xenon-maps-${{ steps.version.outputs.version }}.zip xenon-maps.html
+          cd ..
+          
+      - name: 🚀 GitHub Release oluştur
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "Xenon Maps ${{ steps.version.outputs.version }}"
+          body: |
+            ## 🗺️ Xenon Maps - Release ${{ steps.version.outputs.version }}
+            
+            ### ✨ Özellikler
+            - 🌍 OpenStreetMap tabanlı ücretsiz harita
+            - 🔍 Konum arama (Nominatim API)
+            - 📍 Mevcut konumu bulma (GPS)
+            - 🎨 Modern koyu tema tasarımı
+            - 📱 Mobil uyumlu responsive tasarım
+            - 🖱️ Sağ tık menüsü ile hızlı işlemler
+            - 📏 Mesafe ölçme aracı
+            - 🔗 URL paylaşma özelliği
+            
+            ### 📦 Dosyalar
+            - **xenon-maps.html**: Tek dosya, tarayıcıda aç, kullan! Tüm CSS ve JS gömülü.
+            - **xenon-maps.zip**: Sıkıştırılmış versiyon
+            
+            ### 🚀 Kullanım
+            1. `xenon-maps.html` dosyasını indirin
+            2. Herhangi bir modern tarayıcıda açın
+            3. İnternet bağlantısı gerektirir (Leaflet ve OpenStreetMap için)
+            
+            ### 🛠️ Teknolojiler
+            - Leaflet.js (v1.9.4)
+            - OpenStreetMap
+            - Nominatim Geocoding API
+            - Font Awesome Icons
+            
+            ### 📝 Lisans
+            MIT License - Tamamen ücretsiz ve açık kaynak
+            
+            ---
+            *Otomatik olarak GitHub Actions tarafından oluşturuldu 🚀*
+          files: |
+            dist/xenon-maps.html
+            xenon-maps-${{ steps.version.outputs.version }}.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: ✅ Build başarılı
+        run: |
+          echo "🎉 Release oluşturuldu: ${{ steps.version.outputs.version }}"
+          echo "📁 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
