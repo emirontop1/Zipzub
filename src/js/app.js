@@ -14,14 +14,12 @@ class XenonMaps {
     }
     
     init() {
-        // Sayfa yüklendiğinde haritayı başlat
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => this.initializeMap());
         } else {
             this.initializeMap();
         }
         
-        // Loader'ı kaldır
         window.addEventListener('load', () => {
             setTimeout(() => {
                 const loader = document.getElementById('xenon-loader');
@@ -30,78 +28,46 @@ class XenonMaps {
                 if (loader) loader.classList.add('hidden');
                 if (app) app.classList.remove('hidden');
                 
-                // Harita boyutunu güncelle
                 if (this.map) {
                     this.map.invalidateSize();
                 }
             }, 1500);
         });
+        
+        // İnternet bağlantısını dinle
+        window.addEventListener('online', () => {
+            this.showNotification('🌐 İnternet bağlantısı geri geldi', 'success');
+        });
+        
+        window.addEventListener('offline', () => {
+            this.showNotification('⚠️ İnternet bağlantısı kesildi - Offline mod', 'error');
+        });
     }
     
     initializeMap() {
-        // Varsayılan konum: Ankara, Türkiye
-        const defaultLat = 39.9334;
-        const defaultLng = 32.8597;
-        const defaultZoom = 13;
-        
         // URL'den konum al
         const params = new URLSearchParams(window.location.search);
-        const lat = parseFloat(params.get('lat')) || defaultLat;
-        const lng = parseFloat(params.get('lng')) || defaultLng;
-        const zoom = parseInt(params.get('zoom')) || defaultZoom;
+        const lat = parseFloat(params.get('lat')) || XenonMapConfig.defaultCenter[0];
+        const lng = parseFloat(params.get('lng')) || XenonMapConfig.defaultCenter[1];
+        const zoom = parseInt(params.get('zoom')) || XenonMapConfig.defaultZoom;
         
-        // Harita elementini kontrol et
+        // XenonMapConfig kullanarak harita oluştur
         const mapElement = document.getElementById('map');
         if (!mapElement) {
             console.error('Harita elementi bulunamadı!');
             return;
         }
         
-        // Haritayı oluştur
-        this.map = L.map('map', {
-            center: [lat, lng],
-            zoom: zoom,
-            zoomControl: false,
-            preferCanvas: true
+        // createXenonMap fonksiyonunu kullan (map.js'den gelir)
+        this.map = createXenonMap('map', {
+            defaultCenter: [lat, lng],
+            defaultZoom: zoom
         });
         
-        // Harita katmanları
-        const standardLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Xenon Maps',
-            maxZoom: 19
-        });
-        
-        const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-            maxZoom: 19
-        });
-        
-        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-            maxZoom: 19
-        });
-        
-        // Varsayılan katmanı ekle
-        standardLayer.addTo(this.map);
-        
-        // Katman kontrolü
-        const baseMaps = {
-            'Standart': standardLayer,
-            'Koyu': darkLayer,
-            'Uydu': satelliteLayer
-        };
-        
-        L.control.layers(baseMaps, null, { position: 'topright' }).addTo(this.map);
-        
-        // Zoom kontrolü
-        L.control.zoom({ position: 'topright' }).addTo(this.map);
-        
-        // Ölçek kontrolü
-        L.control.scale({ 
-            position: 'bottomright', 
-            imperial: false,
-            metric: true
-        }).addTo(this.map);
+        if (!this.map) {
+            console.error('Harita oluşturulamadı!');
+            return;
+        }
         
         // Harita olayları
         this.map.on('mousemove', (e) => this.updateCoordinates(e.latlng));
@@ -120,12 +86,12 @@ class XenonMaps {
         this.updateCoordinates({ lat, lng });
         this.updateZoomLevel();
         
-        // Haritayı yeniden boyutlandır
         setTimeout(() => {
             this.map.invalidateSize();
         }, 100);
         
         console.log('✅ Xenon Maps başlatıldı!');
+        console.log('🌐 Çevrimiçi:', navigator.onLine ? 'Evet' : 'Hayır');
     }
     
     setupEventListeners() {
@@ -169,14 +135,13 @@ class XenonMaps {
         if (themeToggle) themeToggle.addEventListener('click', () => this.toggleTheme());
         if (infoBtn) infoBtn.addEventListener('click', () => this.showInfo());
         
-        // Context menu - dışarı tıklamayı kapat
+        // Context menu
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.context-menu')) {
                 this.hideContextMenu();
             }
         });
         
-        // Context menu item'ları
         document.querySelectorAll('.menu-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 const action = e.currentTarget.dataset.action;
@@ -229,6 +194,13 @@ class XenonMaps {
         
         if (query.length < 3) return;
         
+        // Offline ise arama yapma
+        if (!navigator.onLine) {
+            resultsDiv.innerHTML = '<div class="search-result-item">⚠️ Arama için internet bağlantısı gerekli</div>';
+            resultsDiv.classList.remove('hidden');
+            return;
+        }
+        
         try {
             const response = await fetch(
                 `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&accept-language=tr`
@@ -248,7 +220,6 @@ class XenonMaps {
                 
                 resultsDiv.classList.remove('hidden');
                 
-                // Sonuçlara tıklama
                 resultsDiv.querySelectorAll('.search-result-item').forEach(item => {
                     item.addEventListener('click', () => {
                         const lat = parseFloat(item.dataset.lat);
@@ -276,6 +247,11 @@ class XenonMaps {
     
     async searchLocation(query) {
         if (!query || !this.map) return;
+        
+        if (!navigator.onLine) {
+            this.showNotification('⚠️ Arama için internet bağlantısı gerekli', 'error');
+            return;
+        }
         
         try {
             const response = await fetch(
@@ -312,7 +288,6 @@ class XenonMaps {
     addMarker(latlng, popupText = '') {
         if (!this.map) return null;
         
-        // Eski marker'ları temizle
         this.markers.forEach(m => {
             if (this.map) this.map.removeLayer(m);
         });
@@ -344,6 +319,8 @@ class XenonMaps {
     }
     
     async reverseGeocode(latlng) {
+        if (!navigator.onLine) return;
+        
         try {
             const response = await fetch(
                 `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&accept-language=tr`
@@ -438,7 +415,8 @@ class XenonMaps {
               'Açık kaynaklı, ücretsiz harita uygulaması\n' +
               'OpenStreetMap & Leaflet.js kullanır\n\n' +
               'Özellikler:\n' +
-              '• Konum arama\n' +
+              '• Offline harita desteği\n' +
+              '• Konum arama (online)\n' +
               '• GPS ile konum bulma\n' +
               '• Koyu/Aydınlık tema\n' +
               '• Mesafe ölçme\n' +
@@ -453,14 +431,12 @@ class XenonMaps {
         const menu = document.getElementById('contextMenu');
         if (!menu) return;
         
-        // Orijinal event'i al
         const originalEvent = e.originalEvent;
         
         menu.style.left = originalEvent.clientX + 'px';
         menu.style.top = originalEvent.clientY + 'px';
         menu.classList.remove('hidden');
         
-        // Son sağ tık konumunu sakla
         this.contextLatLng = e.latlng;
     }
     
@@ -512,7 +488,6 @@ class XenonMaps {
             this.drawMeasurement();
         }
         
-        // Marker ekle
         L.circleMarker(latlng, {
             radius: 6,
             color: '#4facfe',
@@ -541,7 +516,6 @@ class XenonMaps {
             opacity: 0.8
         }).addTo(this.map);
         
-        // Mesafe hesapla
         let totalDistance = 0;
         for (let i = 1; i < this.measurePoints.length; i++) {
             totalDistance += this.measurePoints[i-1].distanceTo(this.measurePoints[i]);
@@ -572,7 +546,6 @@ class XenonMaps {
         const distanceElement = document.getElementById('measureDistance');
         if (distanceElement) distanceElement.textContent = '0 km';
         
-        // Circle marker'ları temizle
         this.map.eachLayer(layer => {
             if (layer instanceof L.CircleMarker) {
                 this.map.removeLayer(layer);
@@ -597,6 +570,4 @@ class XenonMaps {
 
 // Uygulamayı başlat
 const xenonMaps = new XenonMaps();
-
-// Global erişim için
 window.xenonMaps = xenonMaps;
