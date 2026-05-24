@@ -35,22 +35,34 @@ jobs:
         run: |
           mkdir -p dist
           
-          # CSS ve JS içeriklerini oku
-          CSS_CONTENT=$(cat src/css/style.css)
-          JS_CONTENT=$(cat src/js/app.js)
+          # Node.js script ile birleştirme yapalım
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
           
-          # HTML dosyasını al ve CSS/JS'yi göm
-          cat src/index.html | \
-            sed "s|<link rel=\"stylesheet\" href=\"css/style.css\">|<style>\n${CSS_CONTENT}\n</style>|" | \
-            sed "s|<script src=\"js/app.js\"></script>|<script>\n${JS_CONTENT}\n</script>|" \
-            > dist/xenon-maps.html
+          // Dosyaları oku
+          let html = fs.readFileSync('src/index.html', 'utf8');
+          const css = fs.readFileSync('src/css/style.css', 'utf8');
+          const js = fs.readFileSync('src/js/app.js', 'utf8');
           
-          echo "✅ Birleştirme tamamlandı: dist/xenon-maps.html"
+          // CSS'i göm
+          html = html.replace(
+            '<link rel=\"stylesheet\" href=\"css/style.css\">',
+            '<style>\n' + css + '\n</style>'
+          );
           
-      - name: 📋 Dosya boyutunu kontrol et
-        run: |
-          echo "📊 Dosya boyutu:"
-          ls -lh dist/xenon-maps.html | awk '{print $5}'
+          // JS'i göm
+          html = html.replace(
+            '<script src=\"js/app.js\"></script>',
+            '<script>\n' + js + '\n</script>'
+          );
+          
+          // dist klasörüne yaz
+          fs.writeFileSync('dist/xenon-maps.html', html, 'utf8');
+          
+          console.log('✅ Birleştirme tamamlandı: dist/xenon-maps.html');
+          console.log('📊 Dosya boyutu:', (fs.statSync('dist/xenon-maps.html').size / 1024).toFixed(2), 'KB');
+          "
           
       - name: 🏷️ Versiyon numarasını belirle
         id: version
@@ -60,7 +72,8 @@ jobs:
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             VERSION=${{ github.event.inputs.version }}
           else
-            VERSION="latest"
+            # Otomatik versiyon: tarih-saat
+            VERSION="v$(date +'%Y.%m.%d-%H%M')"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "🎯 Versiyon: $VERSION"
@@ -70,6 +83,7 @@ jobs:
           cd dist
           zip -r ../xenon-maps-${{ steps.version.outputs.version }}.zip xenon-maps.html
           cd ..
+          echo "📦 ZIP oluşturuldu: xenon-maps-${{ steps.version.outputs.version }}.zip"
           
       - name: 🚀 GitHub Release oluştur
         uses: softprops/action-gh-release@v2
@@ -88,6 +102,7 @@ jobs:
             - 🖱️ Sağ tık menüsü ile hızlı işlemler
             - 📏 Mesafe ölçme aracı
             - 🔗 URL paylaşma özelliği
+            - 🗂️ Çoklu harita katmanı (Standart, Koyu, Uydu)
             
             ### 📦 Dosyalar
             - **xenon-maps.html**: Tek dosya, tarayıcıda aç, kullan! Tüm CSS ve JS gömülü.
